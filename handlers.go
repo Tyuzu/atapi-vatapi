@@ -40,6 +40,7 @@ func UploadVideoFileHandler(w http.ResponseWriter, r *http.Request, _ httprouter
 		if err := r.ParseMultipartForm(maxUploadSize); err != nil {
 			fmt.Printf("Could not parse multipart form: %v\n", err)
 			renderError(w, "CANT_PARSE_FORM", http.StatusInternalServerError)
+				return
 		}
 		fmt.Println("fbdh g: ",r.FormValue("csrftoken"))
 		var count int = 0
@@ -69,10 +70,12 @@ func UploadVideoFileHandler(w http.ResponseWriter, r *http.Request, _ httprouter
 			// validate file size
 			if fileSize > maxUploadSize {
 				renderError(w, "FILE_TOO_BIG", http.StatusBadRequest)
+				return
 			}
 			fileBytes, err := io.ReadAll(file)
 			if err != nil {
 				renderError(w, "INVALID_FILE"+http.DetectContentType(fileBytes), http.StatusBadRequest)
+				return
 			}
 			//~ // check file type, detectcontenttype only needs the first 512 bytes
 			detectedFileType := http.DetectContentType(fileBytes)
@@ -97,12 +100,14 @@ func UploadVideoFileHandler(w http.ResponseWriter, r *http.Request, _ httprouter
 				break
 			default:
 				renderError(w, "INVALID_FILE_TYPE", http.StatusBadRequest)
+				return
 			}
 			// if fileName exists in Redis, again GenerateName(rndmToken(12))
 			//		fileEndings, err := mime.ExtensionsByType(detectedFileType)
 			//~ fileName = GenerateName(16)
 			if err != nil {
 				renderError(w, "CANT_READ_FILE_TYPE", http.StatusInternalServerError)
+				return
 			}
 			newFileName := fileName + fileEndings
 			fmt.Println("fdeshyfu regfu egyure gyre u", newFileName)
@@ -113,23 +118,31 @@ func UploadVideoFileHandler(w http.ResponseWriter, r *http.Request, _ httprouter
 			newFile, err := os.Create(newPath)
 			if err != nil {
 				renderError(w, "CANT_WRITE_FILE", http.StatusInternalServerError)
+				return
 			}
 			defer newFile.Close() // idempotent, okay to call twice
 			if _, err := newFile.Write(fileBytes); err != nil || newFile.Close() != nil {
 				renderError(w, "CANT_WRITE_FILE", http.StatusInternalServerError)
+				return
 			}
-			FFConvert(fileName , fileEndings )
-			
+			if postType == "v" {
+				FFConvert(fileName , fileEndings )
+			}
 			postName = fmt.Sprintf("%v%v", postType,postName)
 			//~ fmt.Fprintf(w, "{\"postname\": \""+postName+"\", \"postcount\": "+fmt.Sprintf("%d",count)+"}")
-			fmt.Fprintf(w, "{\"postname\":\""+postName+"\", \"postcount\":"+fmt.Sprintf("%d",count)+", \"posttype\":\""+ fmt.Sprintf("%s",postType) +"\"}")
+			//~ fmt.Fprintf(w, "{\"postname\":\""+postName+"\", \"postcount\":"+fmt.Sprintf("%d",count)+", \"posttype\":\""+ fmt.Sprintf("%s",postType) +"\"}")
+			//~ var res = fmt.Sprintf("{\"postname\":\""+postName+"\", \"postcount\":"+fmt.Sprintf("%v",count)+", \"posttype\":\""+postType+"\"}")
+			
+			var res = fmt.Sprintf("{\"postname\": \""+postName+"\", \"postcount\": "+fmt.Sprintf("%v",count)+", \"posttype\": \""+postType+"\"}")
+			fmt.Fprintf(w,res)
+			rdxHset("posts", postName, res)
 	}
 }
 
 func FFConvert(fileName string, fileEndings string) {
 	getFrom := "./videos" + "/" + fileName + fileEndings
 	saveAs := "./streams" + "/" + fileName + ".mp4"
-	cmd := exec.Command("ffmpeg", "-i", getFrom, "-filter:v", "scale=-2:640:flags=lanczos", "-c:a", "copy", "-pix_fmt", "yuv420p", saveAs)
+	cmd := exec.Command("ffmpeg", "-i", getFrom, "-filter:v", "scale=-2:480:flags=lanczos", "-c:a", "copy", "-pix_fmt", "yuv420p", saveAs)
 	err := cmd.Start()
 	if err != nil {
 		log.Fatal(err)
@@ -179,16 +192,26 @@ func EventNew(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var whr = r.FormValue("where")
 	var whns = r.FormValue("whens")
 	var whne = r.FormValue("whene")
+	var whnst = r.FormValue("whenst")
+	var whnet = r.FormValue("whenet")
 	var typ = r.FormValue("typ")
 	var cat = r.FormValue("cat")
 	var desc = r.FormValue("desc")
-	var eventid = "fgdshgfdh"
-	//~ fmt.Fprintf(w,"{\"what\":\""+wht+"\", \"when\":\""+whn+"\", \"where\":\""+whr+"\", \"eventid\":\""+eventid+"\"}")
-	fmt.Fprintf(w,"{\"what\":\""+wht+"\", \"whens\":\""+whns+"\", \"whene\":\""+whne+"\", \"typ\":\""+typ+"\", \"cat\":\""+cat+"\", \"desc\":\""+desc+"\", \"where\":\""+whr+"\", \"eventid\":\""+eventid+"\"}")
+	var eventid = GenerateName(18)
+	var res = fmt.Sprintf("{\"what\":\""+wht+"\", \"whens\":\""+whns+"\", \"whene\":\""+whne+"\", \"whenst\":\""+whnst+"\", \"whenet\":\""+whnet+"\", \"typ\":\""+typ+"\", \"cat\":\""+cat+"\", \"desc\":\""+desc+"\", \"where\":\""+whr+"\", \"eventid\":\""+eventid+"\"}")
+	rdxHset("events", eventid, res)
+	fmt.Fprintf(w,res)
+}
+
+func EventView(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	enableCors(&w)
+	var eventid = r.URL.Query().Get("eventid")
+	res, _ := rdxHget("events", eventid)
+	fmt.Fprintf(w,res)
 }
 
 
-func PlaceNew(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+func PlaceNew(w http.ResponseWriter, r *http.Request, k httprouter.Params) {
 	enableCors(&w)
 	var nameofplace = r.FormValue("nameofplace")
 	var address = r.FormValue("address")
@@ -202,7 +225,24 @@ func PlaceNew(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
 	var about = r.FormValue("about")
 	var paymentmethod = r.FormValue("paymentmethod")
 	var keyword = r.FormValue("keyword")
-	fmt.Fprintf(w,"{\"nameofplace\":\""+nameofplace+"\", \"address\":\""+address+"\", \"category\":\""+category+"\", \"closingtime\":\""+closingtime+"\", \"openingtime\":\""+openingtime+"\", \"phonenumber\":\""+phonenumber+"\", \"instagaram\":\""+instagaram+"\", \"facilities\":\""+facilities+"\", \"about\":\""+about+"\", \"paymentmethod\":\""+paymentmethod+"\", \"keyword\":\""+keyword+"\", \"website\":\""+website+"\"}")
+	var placeid = GenerateName(18)
+	var res = fmt.Sprintf("{\"nameofplace\":\""+nameofplace+"\", \"address\":\""+address+"\", \"category\":\""+category+"\", \"closingtime\":\""+closingtime+"\", \"openingtime\":\""+openingtime+"\", \"phonenumber\":\""+phonenumber+"\", \"instagaram\":\""+instagaram+"\", \"facilities\":\""+facilities+"\", \"about\":\""+about+"\", \"paymentmethod\":\""+paymentmethod+"\", \"keyword\":\""+keyword+"\", \"website\":\""+website+"\", \"placeid\":\""+placeid+"\"}")
+	rdxHset("places", placeid, res)
+	fmt.Fprintf(w,res)
+}
+
+func PlaceView(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	enableCors(&w)
+	var placeid = r.URL.Query().Get("placeid")
+	res, _ := rdxHget("places", placeid)
+	fmt.Fprintf(w,res)
+}
+
+func PostView(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {
+	enableCors(&w)
+	var postid = r.URL.Query().Get("postid")
+	res, _ := rdxHget("posts", postid)
+	fmt.Fprintf(w,res)
 }
 
 func Res(w http.ResponseWriter, r *http.Request, _ httprouter.Params) {

@@ -17,10 +17,11 @@ func main() {
 	router.POST("/picup", (UploadVideoFileHandler))
 	router.GET("/image/:imageName", sendImageAsBytes)
 	router.GET("/csrf", CSRF)
-	router.GET("/post", Res)
 	router.POST("/event/new", EventNew)
 	router.POST("/place/new", PlaceNew)
-	router.GET("/event", Res)
+	router.GET("/place", PlaceView)
+	router.GET("/event", EventView)
+	router.GET("/post", PostView)
 	router.POST("/res", Res)
 	router.GET("/res", Res)
 	router.POST("/translate", Translate)
@@ -38,5 +39,5 @@ func main() {
 
 
 	log.Println("Starting Server")
-    log.Fatal(http.ListenAndServe(":4371", router))
+    log.Fatal(http.ListenAndServe("localhost:4371", router))
 }
