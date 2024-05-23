@@ -39,5 +39,5 @@ func main() {
 
 
 	log.Println("Starting Server")
-    log.Fatal(http.ListenAndServe("localhost:4371", router))
+    log.Fatal(http.ListenAndServe(":4371", router))
 }
